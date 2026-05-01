@@ -18,7 +18,7 @@ import { BearerAuthGuard } from '../common/auth.guard';
 @UseGuards(BearerAuthGuard)
 @Controller('debtors')
 export class DebtorsController {
-  constructor(private readonly debtorsService: DebtorsService) {}
+  constructor(private readonly debtorsService: DebtorsService) { }
 
   @Get()
   findAll(@Query('campaign_id') campaignId?: string) {

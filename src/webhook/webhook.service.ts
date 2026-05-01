@@ -20,9 +20,9 @@ interface BolnaWebhookPayload {
 type DebtorStatus = 'pending' | 'called' | 'committed' | 'refused' | 'no_answer';
 
 const OUTCOME_TO_STATUS: Record<string, DebtorStatus> = {
-  committed:          'committed',
-  refused:            'refused',
-  no_answer:          'no_answer',
+  committed: 'committed',
+  refused: 'refused',
+  no_answer: 'no_answer',
   callback_requested: 'called',
   partial_commitment: 'committed',
 };
@@ -34,7 +34,7 @@ export class WebhookService {
   constructor(
     private supabase: SupabaseService,
     private debtors: DebtorsService,
-  ) {}
+  ) { }
 
   async handleBolnaWebhook(payload: BolnaWebhookPayload): Promise<void> {
     const { to_number, transcript, call_duration, call_status, extracted_data } = payload;

@@ -13,7 +13,7 @@ interface CsvRow {
 
 @Injectable()
 export class DebtorsService {
-  constructor(private supabase: SupabaseService) {}
+  constructor(private supabase: SupabaseService) { }
 
   async uploadCsv(buffer: Buffer, campaignId?: string): Promise<Debtor[]> {
     const rows: CsvRow[] = parse(buffer, {
