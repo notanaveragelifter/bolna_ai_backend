@@ -4,6 +4,7 @@ import {
   Post,
   Param,
   Query,
+  Body,
   UploadedFile,
   UseInterceptors,
   UseGuards,
@@ -35,9 +36,11 @@ export class DebtorsController {
   )
   async upload(
     @UploadedFile() file: Express.Multer.File,
-    @Query('campaign_id') campaignId?: string,
+    @Query('campaign_id') campaignIdQuery?: string,
+    @Body('campaign_id') campaignIdBody?: string,
   ) {
     if (!file) throw new BadRequestException('No file provided');
+    const campaignId = campaignIdQuery ?? campaignIdBody;
     return this.debtorsService.uploadCsv(file.buffer, campaignId);
   }
 }
