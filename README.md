@@ -1,98 +1,392 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# RecoverIQ Backend
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+NestJS backend for debt-recovery campaign operations:
+- campaign management
+- debtor ingestion and tracking
+- Bolna outbound call triggering
+- webhook/sync-based transcript ingestion
+- AI transcript parsing with Anthropic primary and OpenAI fallback
+- campaign and global recovery analytics
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+## Tech Stack
 
-## Description
+- Runtime: Node.js + TypeScript + NestJS
+- DB: Supabase (PostgREST via `@supabase/supabase-js`)
+- Calling provider: Bolna API
+- AI parsing: Anthropic (`@anthropic-ai/sdk`) with OpenAI (`openai`) fallback
+- Auth: static bearer token (`API_SECRET`)
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+## Project Structure
 
-## Project setup
-
-```bash
-$ npm install
+```text
+src/
+  campaigns/
+    campaigns.controller.ts
+    campaigns.service.ts
+    campaigns.module.ts
+  debtors/
+    debtors.controller.ts
+    debtors.service.ts
+    debtors.module.ts
+  webhook/
+    webhook.controller.ts
+    webhook.service.ts
+    webhook.module.ts
+  stats/
+    stats.controller.ts
+    stats.service.ts
+    stats.module.ts
+  common/
+    auth.guard.ts
+    supabase.service.ts
+    bolna.service.ts
+    transcript-parser.service.ts
+  app.module.ts
+  main.ts
 ```
 
-## Compile and run the project
+## Environment Variables
 
-```bash
-# development
-$ npm run start
+Create `.env` in repo root.
 
-# watch mode
-$ npm run start:dev
+```env
+# Bolna
+BOLNA_API_KEY=
+BOLNA_AGENT_ID=
 
-# production mode
-$ npm run start:prod
+# Supabase (required by current code)
+SUPABASE_URL=
+SUPABASE_ANON_KEY=
+
+# AI parsing
+ANTHROPIC_API_KEY=
+OPENAI_API_KEY=
+
+# API auth for protected routes
+API_SECRET=your-static-secret-here
+
+# Server
+PORT=3000
 ```
 
-## Run tests
+### Important Notes
+
+- `SUPABASE_ANON_KEY` is what current code reads.
+- `.env.example` may still mention `SUPABASE_SERVICE_KEY`; keep `.env` aligned with code.
+- `TranscriptParserService` currently reads AI keys from `process.env` directly.
+
+## Local Setup
 
 ```bash
-# unit tests
-$ npm run test
-
-# e2e tests
-$ npm run test:e2e
-
-# test coverage
-$ npm run test:cov
+npm install
+npm run start:dev
 ```
 
-## Deployment
+Server defaults to `http://localhost:3000`.
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
+## Authentication Model
 
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+Protected routes require:
+
+```http
+Authorization: Bearer <API_SECRET>
+```
+
+Guard behavior:
+- Missing auth header -> `401`
+- Header without `Bearer ` prefix -> `401`
+- Invalid token -> `401`
+
+Unprotected routes:
+- `POST /webhook/bolna`
+- `POST /webhook/bolna/sync`
+
+## Data Model (runtime assumptions)
+
+### Debtor fields used by backend
+
+- `id`
+- `name`
+- `phone`
+- `company`
+- `invoice_amount`
+- `due_date`
+- `status` (`pending | called | committed | refused | no_answer`)
+- `committed_amount`
+- `payment_date`
+- `objection_type`
+- `call_duration`
+- `transcript`
+- `campaign_id`
+- `created_at`
+
+### Campaign fields used by backend
+
+- `id`
+- `name`
+- `total_debtors`
+- `calls_made`
+- `total_committed`
+- `status` (`active | completed | paused`)
+- `created_at`
+
+## End-to-End Flow
+
+### 1) Campaign + Debtor Setup
+
+1. Create campaign via `POST /campaigns`.
+2. Upload debtor CSV via `POST /debtors/upload?campaign_id=<id>`.
+3. Debtors are inserted with initial status `pending`.
+
+### 2) Trigger Calling
+
+1. `POST /campaigns/:id/trigger` loads debtors for campaign.
+2. For each debtor, backend calls Bolna `POST /call`.
+3. Debtor status is updated to `called`.
+4. Backend schedules polling (`pollForCompletion`) for each returned execution ID.
+5. Campaign `calls_made` is updated to number of successful trigger attempts.
+
+### 3) Call Result Ingestion
+
+Two parallel ingestion mechanisms exist:
+
+- Push: Bolna webhook -> `POST /webhook/bolna`
+- Pull: periodic sync (`setInterval`) and manual sync -> `POST /webhook/bolna/sync`
+
+Webhook module auto-polls Bolna completed executions every `30s`.
+
+### 4) Transcript Processing
+
+For each completed execution:
+
+1. Identify debtor by `debtor_id` in execution context, else by phone.
+2. Save transcript and call duration immediately.
+3. Use provider `extracted_data` if present.
+4. If `call_outcome` missing, parse transcript via AI:
+   - first Anthropic
+   - if Anthropic fails, fallback to OpenAI
+5. Map `call_outcome` to debtor status:
+   - `committed` -> `committed`
+   - `partial_commitment` -> `committed`
+   - `refused` -> `refused`
+   - `no_answer` -> `no_answer`
+   - `callback_requested` -> `called`
+6. Compute `committed_amount`:
+   - use extracted amount when present
+   - else fallback to `invoice_amount` for committed outcomes
+7. Save extracted fields on debtor.
+8. Increment campaign `total_committed` when applicable.
+
+## AI Parsing Behavior
+
+`TranscriptParserService` implements:
+
+- `parse(transcript)`:
+  - `parseWithAnthropic()`
+  - catch error -> `parseWithOpenAI()`
+- Both models are prompted to output strict JSON:
+  - `call_outcome`
+  - `committed_amount`
+  - `payment_date`
+  - `objection_type`
+
+If both providers fail, processing still completes with default-safe behavior (`no_answer` fallback path in calling flow).
+
+## API Reference
+
+Base URL examples assume `http://localhost:3000`.
+
+---
+
+### Health/Test
+
+#### `GET /`
+Returns default hello message.
 
 ```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
+curl -s http://localhost:3000/
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+---
 
-## Resources
+### Debtors (Protected)
 
-Check out a few resources that may come in handy when working with NestJS:
+#### `GET /debtors`
+List all debtors (newest first).
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+```bash
+curl -s http://localhost:3000/debtors \
+  -H "Authorization: Bearer $API_SECRET"
+```
 
-## Support
+#### `GET /debtors?campaign_id=<campaignId>`
+List debtors for one campaign.
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+#### `GET /debtors/:id`
+Get one debtor.
 
-## Stay in touch
+#### `POST /debtors/upload`
+Upload CSV file; supports campaign id as query or body.
 
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+Expected CSV headers:
+- `name`
+- `phone`
+- `company`
+- `invoice_amount`
+- `due_date`
+
+Example:
+
+```bash
+curl -X POST "http://localhost:3000/debtors/upload?campaign_id=<campaignId>" \
+  -H "Authorization: Bearer $API_SECRET" \
+  -F "file=@./debtors.csv"
+```
+
+Validation:
+- missing file -> `400`
+- missing required columns -> `400`
+
+---
+
+### Campaigns (Protected)
+
+#### `GET /campaigns`
+List campaigns.
+
+#### `GET /campaigns/:id`
+Get one campaign.
+
+#### `POST /campaigns`
+Create campaign.
+
+Body:
+
+```json
+{ "name": "April Recovery Batch" }
+```
+
+#### `POST /campaigns/:id/trigger`
+Trigger outbound calls for all debtors in that campaign.
+
+Response shape:
+
+```json
+{
+  "triggered": 10,
+  "errors": [
+    { "phone": "+919999999999", "error": "HTTP 400: ..." }
+  ]
+}
+```
+
+---
+
+### Stats (Protected)
+
+#### `GET /stats`
+Aggregated performance stats from debtors table:
+- `total_debtors`
+- `calls_made`
+- `total_committed`
+- `recovery_rate` (%)
+- `avg_call_duration` (seconds)
+
+#### `GET /stats/executions`
+Fetch all Bolna executions (optional `?status=<value>`).
+
+#### `GET /stats/executions/:executionId`
+Fetch single Bolna execution detail.
+
+---
+
+### Webhooks / Sync (Unprotected)
+
+#### `POST /webhook/bolna`
+Entry point for Bolna webhook payload. Always returns `{ "ok": true }` on accepted processing path.
+
+#### `POST /webhook/bolna/sync`
+Manually pull completed Bolna executions and process them.
+
+Response:
+
+```json
+{
+  "processed": 12,
+  "skipped": 8,
+  "errors": 1
+}
+```
+
+## Example Operational Sequence
+
+1. `POST /campaigns` create campaign
+2. `POST /debtors/upload?campaign_id=<id>` upload CSV
+3. `POST /campaigns/:id/trigger` launch calls
+4. Wait for:
+   - Bolna webhook pushes, and/or
+   - auto-sync every 30s, and/or
+   - manual `POST /webhook/bolna/sync`
+5. `GET /debtors?campaign_id=<id>` inspect statuses and extracted outcomes
+6. `GET /stats` inspect recovery metrics
+
+## NPM Scripts
+
+```bash
+npm run build
+npm run start
+npm run start:dev
+npm run start:prod
+npm run lint
+npm run test
+npm run test:e2e
+```
+
+## Troubleshooting
+
+### Port already in use (`EADDRINUSE: 3000`)
+
+```bash
+lsof -ti :3000 | xargs kill -9
+```
+
+If multiple PIDs are attached, kill each PID.
+
+### Anthropic returns credit error
+
+If API responds with "credit balance is too low":
+- verify billing in correct Anthropic workspace
+- generate key from same workspace with credits
+- use OpenAI fallback as configured (requires `OPENAI_API_KEY`)
+
+### OpenAI auth fails
+
+- verify key format starts with `sk-`
+- test quickly:
+
+```bash
+curl -s https://api.openai.com/v1/models \
+  -H "Authorization: Bearer $OPENAI_API_KEY"
+```
+
+### Debtor not found during execution processing
+
+Execution may not include expected `debtor_id` or normalized phone format.
+Check Bolna `context_details` and debtor `phone` formatting consistency.
+
+## Security Recommendations
+
+- Never commit real API keys.
+- Rotate any key that has been pasted into chat/logs.
+- Consider signing/validating webhook source if exposed publicly.
+- Consider replacing static `API_SECRET` with JWT/auth provider for production.
+
+## Known Design Notes
+
+- `WebhookService` includes both push and pull ingestion, reducing missed updates.
+- Campaign call trigger includes asynchronous poller and webhook/sync may also process outcomes; logic skips already processed debtors.
+- AI extraction is best-effort and defaults to safe status mapping when data is missing.
 
 ## License
 
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+UNLICENSED (as configured in `package.json`).
