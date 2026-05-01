@@ -11,4 +11,11 @@ export class WebhookController {
     await this.webhookService.handleBolnaWebhook(payload);
     return { ok: true };
   }
+
+  // Pull all completed executions from Bolna API and process them
+  @Post('bolna/sync')
+  @HttpCode(200)
+  async sync() {
+    return this.webhookService.syncFromBolna();
+  }
 }
